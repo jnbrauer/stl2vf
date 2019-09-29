@@ -1,3 +1,6 @@
 /target
 **/*.rs.bk
 .idea
+stl2vf.iml
+output.vf
+output.msh

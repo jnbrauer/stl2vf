@@ -1,10 +1,11 @@
-use ndarray::{Array3, Axis, Array2, Array1, ArrayBase, Data, Dimension};
-use std::process::Command;
-use ndarray_linalg::*;
-use std::path::Path;
-use std::fs::File;
-use std::io::{BufReader, BufRead, Write};
 use std::error::Error;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Write};
+use std::path::Path;
+use std::process::Command;
+
+use ndarray::{Array1, Array2, Array3};
+use ndarray_linalg::*;
 
 pub struct VoxelModel {
     voxels: Array3<i8>,
@@ -74,10 +75,7 @@ impl Mesh {
 
         // Open msh file created by gmsh
         let file_path = Path::new("output.msh");
-        let file = match File::open(&file_path) {
-            Err(_) => panic!("Failed to open file"),
-            Ok(file) => file,
-        };
+        let file = File::open(&file_path)?;
 
         // Current line number being processed
         let mut line_number;
@@ -89,17 +87,15 @@ impl Mesh {
 
         let mut lines: Vec<String> = Vec::new();
         for line in BufReader::new(file).lines() {
-            if let Ok(line) = line {
-                let line = line.trim().to_owned();
+            let line = line?.trim().to_owned();
 
-                if &line == "$Nodes" {
-                    nodes_start = lines.len();
-                } else if &line == "$Elements" {
-                    elements_start = lines.len();
-                }
-
-                lines.push(line);
+            if &line == "$Nodes" {
+                nodes_start = lines.len();
+            } else if &line == "$Elements" {
+                elements_start = lines.len();
             }
+
+            lines.push(line);
         }
 
         let nodes_info_line = utils::split_string(&lines[nodes_start+1]);
@@ -124,11 +120,11 @@ impl Mesh {
         }
 
         let tris_info_line = utils::split_string(&lines[elements_start+2]);
-        let n_tris: usize = tris_info_line[3].parse().expect("Error parsing mesh file");
+        let n_tris: usize = tris_info_line[3].parse()?;
 
         line_number = elements_start + n_tris + 3;
         let tets_info_line = utils::split_string(&lines[line_number]);
-        let n_tets = tets_info_line[3].parse().expect("Error parsing mesh file");
+        let n_tets = tets_info_line[3].parse()?;
 
         line_number += 1;
         for _ in 0..n_tets {
@@ -168,16 +164,12 @@ impl Mesh {
             if point[2] > z_max { z_max = point[2]; }
         }
 
-        println!("x min: {}, x max: {}, y min: {}, y max: {}, z min: {}, z max: {}", x_min, x_max, y_min, y_max, z_min, z_max);
-
         let x_min = x_min.round() as i32;
         let x_max = x_max.round() as i32;
         let y_min = y_min.round() as i32;
         let y_max = y_max.round() as i32;
         let z_min = z_min.round() as i32;
         let z_max = z_max.round() as i32;
-
-        println!("x min: {}, x max: {}, y min: {}, y max: {}, z min: {}, z max: {}", x_min, x_max, y_min, y_max, z_min, z_max);
 
         let x_len: usize = (x_max - x_min) as usize;
         let y_len: usize = (y_max - y_min) as usize;
@@ -211,12 +203,6 @@ impl Mesh {
             }
         }
 
-        println!("X: {}, Y: {}, Z: {}", grid_xyz[[0, 0]], grid_xyz[[0, 1]], grid_xyz[[0, 2]]);
-        println!("X: {}, Y: {}, Z: {}", grid_xyz[[n_voxels-1, 0]], grid_xyz[[n_voxels-1, 1]], grid_xyz[[n_voxels-1, 2]]);
-        println!("{}", grid_xyz.len_of(Axis(0)));
-
-        let mut filled_voxels = 0;
-
         let mut model: Array3<i8> = Array3::zeros((x_len, y_len, z_len));
         for tet in self.tets.genrows() {
             let mut tet_full = Array2::zeros((4, 4));
@@ -243,13 +229,10 @@ impl Mesh {
 
                     if utils::all_in_range(&dot_products, 0.0, 1.0) { // check if point is inside tet
                         model[[x, y, z]] = 1;
-                        filled_voxels += 1;
                     }
                 }
             }
         }
-
-        println!("{}", filled_voxels);
 
         return Ok(VoxelModel {
             voxels: model,
@@ -280,38 +263,5 @@ mod utils {
         }
 
         return true;
-    }
-}
-
-pub trait ArrayExtensions<T: PartialOrd> {
-    fn min(&self) -> &T;
-    fn max(&self) -> &T;
-}
-
-impl<T, S, D> ArrayExtensions<T> for ArrayBase<S, D> where T: PartialOrd, S: Data<Elem = T>, D: Dimension {
-    fn min(&self) -> &T {
-        let mut iterator = self.iter();
-        let mut min: &T = iterator.next().unwrap();
-
-        for elem in iterator {
-            if elem < min {
-                min = elem;
-            }
-        }
-
-        return min;
-    }
-
-    fn max(&self) -> &T {
-        let mut iterator = self.iter();
-        let mut max: &T = iterator.next().unwrap();
-
-        for elem in iterator {
-            if elem > max {
-                max = elem;
-            }
-        }
-
-        return max;
     }
 }
