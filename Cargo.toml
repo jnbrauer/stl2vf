@@ -1,0 +1,18 @@
+[package]
+name = "stl2vf"
+version = "0.1.0"
+authors = ["jnbrauer <jnbrauer@outlook.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ndarray = "0.12"
+ndarray-linalg = { version = "0.11", features = ["openblas"] }
+#ndarray = { version = "0.12.1", features = ["blas"] }
+#ndarray-linalg = { version = "0.11", features = ["openblas"] }
+#blas-src = { version = "0.2.0", default-features = false, features = ["openblas"] }
+#openblas-src = { version = "0.6.0", default-features = false, features = ["cblas", "system"] }
+#ndarray = "0.12"
+#ndarray-linalg = "0.11"
+#openblas-src = "0.7" # or another backend of your choice
