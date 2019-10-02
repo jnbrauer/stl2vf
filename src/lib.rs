@@ -57,14 +57,20 @@ pub struct Mesh {
 
 impl Mesh {
     pub fn from_stl(filename: &str) -> Result<Mesh, Box<dyn Error>> {
+        let mut gmsh_script_file = File::create("output.geo")?;
+
+        writeln!(gmsh_script_file, "Merge \"{}\";", filename)?;
+        writeln!(gmsh_script_file, "Surface Loop(1) = {{1}};")?;
+        writeln!(gmsh_script_file, "//+")?;
+        writeln!(gmsh_script_file, "Volume(1) = {{1}};")?;
+
         // Use gmsh to convert STL file to mesh file
         Command::new("gmsh")
             .arg("output.geo")
             .arg("-3")
             .arg("-format")
             .arg("msh")
-            .output()
-            .expect("Gmsh execution failed");
+            .output()?;
 
         // List of points
         let mut points: Vec<f32> = Vec::new();
@@ -142,10 +148,14 @@ impl Mesh {
         let points = Array2::from_shape_vec((n_points, 3), points)?;
         let tets = Array2::from_shape_vec((n_tets, 4), tets)?;
 
+        Command::new("rm").arg("output.geo").spawn()?;
+        Command::new("rm").arg("output.msh").spawn()?;
+
         return Ok(Mesh {points, tets});
     }
 
     pub fn voxelize(&self) -> Result<VoxelModel, Box<dyn Error>> {
+        // Get min and max values in each axis
         let mut x_min = self.points[[0, 0]];
         let mut x_max = self.points[[0, 0]];
         let mut y_min = self.points[[0, 1]];
@@ -164,6 +174,7 @@ impl Mesh {
             if point[2] > z_max { z_max = point[2]; }
         }
 
+        // Round min and max values to integers
         let x_min = x_min.round() as i32;
         let x_max = x_max.round() as i32;
         let y_min = y_min.round() as i32;
@@ -171,18 +182,24 @@ impl Mesh {
         let z_min = z_min.round() as i32;
         let z_max = z_max.round() as i32;
 
-        let x_len: usize = (x_max - x_min) as usize;
-        let y_len: usize = (y_max - y_min) as usize;
-        let z_len: usize = (z_max - z_min) as usize;
+        // Calculate x, y, and z lengths
+        let x_len = (x_max - x_min) as usize;
+        let y_len = (y_max - y_min) as usize;
+        let z_len = (z_max - z_min) as usize;
+        // Calcuate total number of voxels
         let n_voxels = x_len * y_len * z_len;
 
+        // Create array to store coordinates of each voxel
         let mut grid_xyz: Array2<f32> = Array2::zeros((n_voxels, 4));
+        // Create array to store position of each voxel in grid
         let mut grid_ijk: Array2<usize> = Array2::zeros((n_voxels, 3));
 
+        // Find coordinates of center of first voxel
         let x_start: f32 = x_min as f32 + 0.5;
         let y_start: f32 = y_min as f32 + 0.5;
         let z_start: f32 = z_min as f32 + 0.5;
 
+        // Generate list of voxels
         let mut row = 0;
         for i in 0..x_len {
             for j in 0..y_len {
@@ -203,6 +220,7 @@ impl Mesh {
             }
         }
 
+        // Create complete voxel grid
         let mut model: Array3<i8> = Array3::zeros((x_len, y_len, z_len));
         for tet in self.tets.genrows() {
             let mut tet_full = Array2::zeros((4, 4));
