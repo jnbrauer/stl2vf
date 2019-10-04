@@ -2,7 +2,7 @@
 
 Version 3, 29 June 2007
 
-Copyright (C) 2019 Cole Brauer, Dan Aukes
+Copyright (C) 2019 Jude Brauer
 
 Everyone is permitted to copy and distribute verbatim copies of this
 license document, but changing it is not allowed.
