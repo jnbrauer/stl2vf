@@ -19,8 +19,8 @@ pub struct Mesh {
     tets: Array2<i32>
 }
 
-pub fn write_to_vf(model: &VoxelModel) -> std::io::Result<()> {
-    let mut file = File::create("output.vf")?;
+pub fn write_to_vf(model: &VoxelModel, file_name: &str) -> std::io::Result<()> {
+    let mut file = File::create(file_name)?;
 
     // Coordinates
     writeln!(file, "<coords>\n0,0,0,\n</coords>")?;
