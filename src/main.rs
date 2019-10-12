@@ -1,12 +1,12 @@
 extern crate stl2vf;
 
-use stl2vf::Mesh;
+use stl2vf::{voxelize, from_stl, write_to_vf};
 
 fn main() {
-    let mesh = Mesh::from_stl("input.stl").expect("Error converting STL");
+    let mesh = from_stl("end1x10.stl").expect("Error converting STL");
     println!("Mesh loaded");
-    let model = mesh.voxelize().expect("Error voxelizing model");
+    let model = voxelize(&mesh).expect("Error voxelizing model");
     println!("Model voxelized");
-    model.write_to_vf().expect("Error writing VF file");
+    write_to_vf(&model).expect("Error writing VF file");
     println!("VF file written");
 }
