@@ -3,9 +3,11 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::Command;
+use std::thread;
 
 use ndarray::{Array1, Array2, Array3};
 use ndarray_linalg::*;
+use std::sync::{Arc, Mutex};
 
 pub struct VoxelModel {
     voxels: Array3<u8>,
@@ -151,7 +153,7 @@ pub fn from_stl(filename: &str) -> Result<Mesh, Box<dyn Error>> {
     return Ok(Mesh {points, tets});
 }
 
-pub fn voxelize(mesh: &Mesh) -> Result<VoxelModel, Box<dyn Error>> {
+pub fn voxelize(mesh: Mesh) -> Result<VoxelModel, Box<dyn Error>> {
     // Get min and max values in each axis
     let mut x_min = mesh.points[[0, 0]];
     let mut x_max = mesh.points[[0, 0]];
@@ -218,39 +220,64 @@ pub fn voxelize(mesh: &Mesh) -> Result<VoxelModel, Box<dyn Error>> {
     }
 
     // Create complete voxel grid
-    let mut model: Array3<u8> = Array3::zeros((x_len, y_len, z_len));
+    let model: Arc<Mutex<Array3<u8>>> = Arc::new(Mutex::new(Array3::zeros((x_len, y_len, z_len))));
+    let grid_ijk: Arc<Array2<usize>> = Arc::new(grid_ijk);
+    let grid_xyz: Arc<Array2<f32>> = Arc::new(grid_xyz);
+    let points: Arc<Array2<f32>> = Arc::new(mesh.points);
+
+    let mut thread_handles = vec![];
+
     for tet in mesh.tets.genrows() {
-        let mut tet_full = Array2::zeros((4, 4));
-        for i in 0..4 {
-            for j in 0..3 {
-                tet_full[[i, j]] = mesh.points[[tet[i] as usize, j]];
+        let tet = tet.to_owned();
+
+        let model = Arc::clone(&model);
+        let grid_ijk = Arc::clone(&grid_ijk);
+        let grid_xyz = Arc::clone(&grid_xyz);
+        let points = Arc::clone(&points);
+
+        let handle = thread::spawn(move || {
+            let mut tet_full = Array2::zeros((4, 4));
+            for i in 0..4 {
+                for j in 0..3 {
+                    tet_full[[i, j]] = points[[tet[i] as usize, j]];
+                }
+                tet_full[[i, 3]] = 1.0;
             }
-            tet_full[[i, 3]] = 1.0;
-        }
 
-        let mut inverse = tet_full.inv()?;
-        inverse = inverse.t().to_owned();
+            let mut inverse = tet_full.inv().unwrap();
+            inverse = inverse.t().to_owned();
 
-        for i in 0..n_voxels {
-            let x = grid_ijk[[i, 0]];
-            let y = grid_ijk[[i, 1]];
-            let z = grid_ijk[[i, 2]];
+            let mut filled_voxels = Vec::with_capacity(n_voxels);
+            for i in 0..n_voxels {
+                let x = grid_ijk[[i, 0]];
+                let y = grid_ijk[[i, 1]];
+                let z = grid_ijk[[i, 2]];
+                let point = vec![x, y, z];
 
-            if model[[x, y, z]] != 1 {
                 let mut dot_products: Array1<f32> = Array1::zeros(4);
                 for j in 0..4 {
                     dot_products[j] = inverse.row(j).dot(&grid_xyz.row(i));
                 }
 
                 if utils::all_in_range(&dot_products, 0.0, 1.0) { // check if point is inside tet
-                    model[[x, y, z]] = 1;
+                    filled_voxels.push(point);
                 }
             }
-        }
+
+            let mut model = model.lock().unwrap();
+            for point in filled_voxels {
+                model[[point[0], point[1], point[2]]] = 1;
+            }
+        });
+        thread_handles.push(handle);
+    }
+
+    for handle in thread_handles {
+        handle.join().unwrap();
     }
 
     return Ok(VoxelModel {
-        voxels: model,
+        voxels: model.lock().unwrap().to_owned(),
         x_len,
         y_len,
         z_len
