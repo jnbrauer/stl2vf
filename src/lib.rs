@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Write, BufWriter};
 use std::path::Path;
 use std::process::Command;
 use std::thread;
@@ -16,13 +16,14 @@ pub struct VoxelModel {
     z_len: usize
 }
 
+#[derive(Clone)]
 pub struct Mesh {
     points: Array2<f32>,
     tets: Array2<i32>
 }
 
 pub fn write_to_vf(model: &VoxelModel, file_name: &str) -> std::io::Result<()> {
-    let mut file = File::create(file_name)?;
+    let mut file = BufWriter::new(File::create(file_name)?);
 
     // Coordinates
     writeln!(file, "<coords>\n0,0,0,\n</coords>")?;
@@ -103,16 +104,16 @@ pub fn from_stl(filename: &str) -> Result<Mesh, Box<dyn Error>> {
         lines.push(line);
     }
 
-    let nodes_info_line = utils::split_string(&lines[nodes_start+1]);
+    let nodes_info_line = split_string(&lines[nodes_start+1]);
     let point_blocks = nodes_info_line[0].parse()?;
 
     line_number = nodes_start + 2;
     for _ in 0..point_blocks {
-        let block_info_line = utils::split_string(&lines[line_number]);
+        let block_info_line = split_string(&lines[line_number]);
         let n = block_info_line[3].parse()?;
         line_number += n + 1 as usize;
         for _ in 0..n {
-            let point_line = utils::split_string(&lines[line_number]);
+            let point_line = split_string(&lines[line_number]);
             let x: f32 = point_line[0].parse()?;
             let y: f32 = point_line[1].parse()?;
             let z: f32 = point_line[2].parse()?;
@@ -124,16 +125,16 @@ pub fn from_stl(filename: &str) -> Result<Mesh, Box<dyn Error>> {
         }
     }
 
-    let tris_info_line = utils::split_string(&lines[elements_start+2]);
+    let tris_info_line = split_string(&lines[elements_start+2]);
     let n_tris: usize = tris_info_line[3].parse()?;
 
     line_number = elements_start + n_tris + 3;
-    let tets_info_line = utils::split_string(&lines[line_number]);
+    let tets_info_line = split_string(&lines[line_number]);
     let n_tets = tets_info_line[3].parse()?;
 
     line_number += 1;
     for _ in 0..n_tets {
-        let point_line = utils::split_string(&lines[line_number]);
+        let point_line = split_string(&lines[line_number]);
         let a: i32 = point_line[1].parse()?;
         let b: i32 = point_line[2].parse()?;
         let c: i32 = point_line[3].parse()?;
@@ -153,7 +154,9 @@ pub fn from_stl(filename: &str) -> Result<Mesh, Box<dyn Error>> {
     return Ok(Mesh {points, tets});
 }
 
-pub fn voxelize(mesh: Mesh) -> Result<VoxelModel, Box<dyn Error>> {
+pub fn voxelize(mesh: &Mesh) -> Result<VoxelModel, Box<dyn Error>> {
+    let mesh = mesh.clone();
+
     // Get min and max values in each axis
     let mut x_min = mesh.points[[0, 0]];
     let mut x_max = mesh.points[[0, 0]];
@@ -259,7 +262,7 @@ pub fn voxelize(mesh: Mesh) -> Result<VoxelModel, Box<dyn Error>> {
                     dot_products[j] = inverse.row(j).dot(&grid_xyz.row(i));
                 }
 
-                if utils::all_in_range(&dot_products, 0.0, 1.0) { // check if point is inside tet
+                if all_in_range(&dot_products, 0.0, 1.0) { // check if point is inside tet
                     filled_voxels.push(point);
                 }
             }
@@ -284,25 +287,21 @@ pub fn voxelize(mesh: Mesh) -> Result<VoxelModel, Box<dyn Error>> {
     });
 }
 
-mod utils {
-    use ndarray::Array1;
+fn split_string(s: &str) -> Vec<&str> {
+    let parts_iterator = s.split_whitespace();
+    let mut parts: Vec<&str> = Vec::new();
 
-    pub fn split_string(s: &str) -> Vec<&str> {
-        let parts_iterator = s.split_whitespace();
-        let mut parts: Vec<&str> = Vec::new();
+    parts_iterator.for_each(|part| parts.push(part));
 
-        parts_iterator.for_each(|part| parts.push(part));
+    return parts;
+}
 
-        return parts;
-    }
-
-    pub fn all_in_range(array: &Array1<f32>, low: f32, high: f32) -> bool {
-        for i in array.iter() {
-            if *i < low-0.00000000001 || *i > high+0.00000000001 {
-                return false;
-            }
+fn all_in_range(array: &Array1<f32>, low: f32, high: f32) -> bool {
+    for i in array.iter() {
+        if *i < low-0.00000000001 || *i > high+0.00000000001 {
+            return false;
         }
-
-        return true;
     }
+
+    return true;
 }
